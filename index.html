@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0b0c">
+<title>Schiphol – Vertrek & Aankomst</title>
+<style>
+  :root {
+    --w: 22px;          /* breedte van één klepje (wordt door JS berekend) */
+    --h: 34px;          /* hoogte van één klepje */
+    --gap: 2px;
+    --board: #0b0b0c;
+    --flap: #1c1c1e;
+    --flap2: #232326;
+    --ink: #f4f4f0;
+    --yellow: #ffd200;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--board); color: var(--ink);
+    font-family: "Helvetica Neue", Arial, sans-serif; -webkit-tap-highlight-color: transparent; }
+  body { display: flex; flex-direction: column; padding: max(10px, env(safe-area-inset-top)) 10px 10px; }
+
+  /* ---------- Kop ---------- */
+  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .modes { display: flex; background: #18181a; border-radius: 10px; padding: 3px; }
+  .modes button { border: 0; background: none; color: #a1a1aa; font: 600 15px/1 "Helvetica Neue", Arial, sans-serif;
+    padding: 9px 14px; border-radius: 8px; cursor: pointer; }
+  .modes button.on { background: var(--yellow); color: #111; }
+  .search { flex: 1; min-width: 180px; position: relative; }
+  .search input { width: 100%; background: #18181a; border: 1px solid #2a2a2e; color: var(--ink); border-radius: 10px;
+    padding: 10px 34px 10px 36px; font: 15px "Helvetica Neue", Arial, sans-serif; outline: none; }
+  .search input:focus { border-color: var(--yellow); }
+  .search input::-webkit-search-cancel-button { display: none; }
+  .search::before { content: "🔍"; position: absolute; left: 11px; top: 50%; transform: translateY(-50%); font-size: 14px; opacity: .7; }
+  .search .clear { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); border: 0; background: none;
+    color: #a1a1aa; font-size: 18px; cursor: pointer; padding: 4px 8px; }
+  .icon { border: 0; background: #18181a; color: var(--ink); border-radius: 10px; width: 40px; height: 40px;
+    font-size: 18px; cursor: pointer; }
+  .badge { font: 700 11px/1 "Helvetica Neue", Arial, sans-serif; letter-spacing: .08em; color: #111; background: #a1a1aa;
+    padding: 4px 6px; border-radius: 4px; }
+  .badge.live { background: #22c55e; }
+
+  /* ---------- Bord ---------- */
+  .board { flex: 1; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+  .titlebar { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; }
+  .titlebar .big { font: 800 clamp(20px, 4.2vw, 38px)/1 "Helvetica Neue", Arial, sans-serif; color: var(--yellow); letter-spacing: .02em; }
+  .titlebar .big small { display: block; font-size: .45em; color: #a1a1aa; font-weight: 600; letter-spacing: .15em; margin-top: 4px; }
+  .heads { display: flex; gap: calc(var(--w) * .6); color: #a1a1aa; font: 700 11px/1 "Helvetica Neue", Arial, sans-serif;
+    letter-spacing: .1em; padding: 0 2px; }
+  .heads span { flex: none; }
+  .row { display: flex; gap: calc(var(--w) * .6); padding: 2px; border-radius: 4px; }
+  .row:nth-child(even) { background: #111113; }
+  .field { display: flex; gap: var(--gap); flex: none; }
+  .row.yellow .field.st .c, .row.yellow .field.st .c > div { color: var(--yellow); }
+  .row.red .field.st .c, .row.red .field.st .c > div { color: #ff5a4f; }
+  .row.dim .c, .row.dim .c > div { color: #8a8a90; }
+  .row.hit .field.pl .c > div { color: var(--yellow); }
+
+  /* Eén klepje: bovenste en onderste helft + twee bewegende flappen */
+  .c { position: relative; width: var(--w); height: var(--h); perspective: calc(var(--h) * 6);
+    font: 700 calc(var(--h) * .7)/var(--h) "Helvetica Neue", Arial, sans-serif; color: var(--ink); }
+  .c > div { position: absolute; left: 0; right: 0; height: 50%; overflow: hidden; color: inherit;
+    backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+  .c > div > span { display: block; height: var(--h); line-height: var(--h); text-align: center; }
+  .c .u, .c .fu { top: 0; background: linear-gradient(var(--flap2), var(--flap)); border-radius: 3px 3px 0 0; transform-origin: 50% 100%; }
+  .c .l, .c .fl { bottom: 0; background: linear-gradient(var(--flap), #151517); border-radius: 0 0 3px 3px; transform-origin: 50% 0; }
+  .c .l > span, .c .fl > span { margin-top: calc(var(--h) / -2); }
+  .c .l, .c .fl { border-top: 1px solid #000; }
+  .c .fu { transform: rotateX(-90deg); z-index: 2; }
+  .c .fl { transform: rotateX(90deg); z-index: 2; }
+
+  .clock .c { --w: calc(var(--cw)); --h: calc(var(--ch)); }
+  .rows { display: flex; flex-direction: column; gap: 3px; }
+  .foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; color: #71717a;
+    font-size: 12px; margin-top: 4px; flex-wrap: wrap; }
+  .pager { display: flex; align-items: center; gap: 8px; color: #a1a1aa; font-size: 13px; }
+  .pager button { border: 0; background: #18181a; color: var(--ink); width: 34px; height: 30px; border-radius: 8px; cursor: pointer; font-size: 16px; }
+  .pager button:disabled { opacity: .3; cursor: default; }
+  .msg { color: #a1a1aa; font-size: 14px; padding: 18px 4px; }
+
+  /* ---------- Instellingen ---------- */
+  dialog { background: #18181a; color: var(--ink); border: 1px solid #2a2a2e; border-radius: 14px; max-width: 460px; width: calc(100% - 24px); }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  dialog h2 { margin: 0 0 6px; font-size: 18px; }
+  dialog p { color: #a1a1aa; font-size: 14px; line-height: 1.5; }
+  dialog a { color: var(--yellow); }
+  dialog label { display: block; font-size: 13px; color: #a1a1aa; margin: 12px 0 4px; }
+  dialog input { width: 100%; background: #0b0b0c; border: 1px solid #2a2a2e; color: var(--ink); border-radius: 8px; padding: 9px 10px; font: 14px ui-monospace, monospace; }
+  dialog .btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  dialog button { border: 0; border-radius: 8px; padding: 9px 14px; font: 600 14px "Helvetica Neue", Arial, sans-serif; cursor: pointer; }
+  dialog .primary { background: var(--yellow); color: #111; }
+  dialog .ghost { background: #2a2a2e; color: var(--ink); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="modes" role="tablist">
+    <button id="modeD" class="on">🛫 Vertrek</button>
+    <button id="modeA">🛬 Aankomst</button>
+  </div>
+  <div class="search">
+    <input id="q" type="search" placeholder="Zoek op route: stad, luchthaven (LHR) of vlucht (KL1001)" autocomplete="off">
+    <button class="clear" id="clear" hidden aria-label="Wissen">×</button>
+  </div>
+  <span class="badge" id="badge">DEMO</span>
+  <button class="icon" id="settingsBtn" title="Instellingen" aria-label="Instellingen">⚙️</button>
+</header>
+
+<main class="board">
+  <div class="titlebar">
+    <div class="big" id="title">VERTREK<small>DEPARTURES · SCHIPHOL</small></div>
+    <div class="field clock" id="clock"></div>
+  </div>
+  <div class="heads" id="heads"></div>
+  <div class="rows" id="rows"></div>
+  <div class="msg" id="msg" hidden></div>
+  <div class="foot">
+    <span id="source">Demo-gegevens</span>
+    <div class="pager">
+      <button id="prev" aria-label="Vorige">‹</button>
+      <span id="page">1/1</span>
+      <button id="next" aria-label="Volgende">›</button>
+    </div>
+  </div>
+</main>
+
+<dialog id="settings">
+  <form method="dialog">
+    <h2>Echte vluchten</h2>
+    <p>Voor actuele vluchten gebruikt het bord de officiële <strong>Schiphol Public Flight API</strong>.
+      Maak gratis een account op <a href="https://developer.schiphol.nl" target="_blank" rel="noopener">developer.schiphol.nl</a>,
+      maak een app aan en vul hier de <em>app_id</em> en <em>app_key</em> in. Ze worden alleen in deze browser bewaard.</p>
+    <label for="appId">app_id</label>
+    <input id="appId" autocomplete="off" spellcheck="false">
+    <label for="appKey">app_key</label>
+    <input id="appKey" autocomplete="off" spellcheck="false">
+    <div class="btns">
+      <button class="ghost" value="demo" id="demoBtn">Demo gebruiken</button>
+      <button class="primary" value="save">Opslaan</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+
+// ================= Klepjes (split-flap) =================
+// Volgorde van de tekens op de trommel, zoals bij een echt Solari-bord: van de ene letter naar de volgende.
+const DRUM = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:.-/'&";
+const STEP_MS = 55;
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function norm(s) {
+  return String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase()
+    .replace(/[^ A-Z0-9:.\-/'&]/g, " ");
+}
+
+class Flap {
+  constructor(parent) {
+    const el = this.el = document.createElement("div");
+    el.className = "c";
+    el.innerHTML = '<div class="u"><span> </span></div><div class="l"><span> </span></div>' +
+                   '<div class="fu"><span> </span></div><div class="fl"><span> </span></div>';
+    [this.u, this.l, this.fu, this.fl] = [...el.children].map(d => d.firstChild);
+    this.fuEl = el.children[2]; this.flEl = el.children[3];
+    this.cur = " "; this.target = " "; this.busy = false;
+    parent.appendChild(el);
+  }
+  set(ch, delay = 0) {
+    ch = DRUM.includes(ch) ? ch : " ";
+    this.target = ch;
+    if (ch === this.cur || this.busy) return;
+    if (reduceMotion || document.hidden) { this.show(ch); return; }
+    this.busy = true;
+    setTimeout(() => this.step(), delay);
+  }
+  show(ch) { this.cur = ch; this.u.textContent = this.l.textContent = ch; }
+  step() {
+    if (this.cur === this.target) { this.busy = false; return; }
+    const old = this.cur;
+    const next = DRUM[(DRUM.indexOf(old) + 1) % DRUM.length];
+    // Boven: nieuwe letter ligt al klaar; de oude bovenhelft klapt naar beneden
+    this.u.textContent = next; this.fu.textContent = old; this.fl.textContent = next; this.l.textContent = old;
+    const half = STEP_MS / 2;
+    this.fuEl.animate([{ transform: "rotateX(0deg)" }, { transform: "rotateX(-90deg)" }], { duration: half, easing: "ease-in" });
+    this.flEl.animate([{ transform: "rotateX(90deg)" }, { transform: "rotateX(0deg)" }],
+      { duration: half, delay: half, easing: "ease-out" });
+    // Timer i.p.v. onfinish: animaties pauzeren als de pagina verborgen is, timers lopen door
+    setTimeout(() => { this.cur = next; this.l.textContent = next; this.step(); }, STEP_MS);
+  }
+}
+
+// Een veld = een vaste rij klepjes
+class Field {
+  constructor(parent, len, cls) {
+    this.el = document.createElement("div");
+    this.el.className = "field " + (cls || "");
+    this.flaps = Array.from({ length: len }, () => new Flap(this.el));
+    parent.appendChild(this.el);
+  }
+  set(text, align = "left") {
+    let t = norm(text).slice(0, this.flaps.length);
+    t = align === "right" ? t.padStart(this.flaps.length) : t.padEnd(this.flaps.length);
+    // Kleine willekeurige vertraging per klepje, zodat het bord "ratelt" zoals in het echt
+    this.flaps.forEach((f, i) => f.set(t[i], i * 12 + Math.random() * 90));
+  }
+}
+
+// ================= Bestemmingen =================
+// Nederlandse namen voor veelgebruikte luchthavens (ook gebruikt om op stad te zoeken).
+const AIRPORTS = {
+  LHR: "Londen Heathrow", LGW: "Londen Gatwick", LCY: "Londen City", STN: "Londen Stansted", LTN: "Londen Luton",
+  CDG: "Parijs CDG", ORY: "Parijs Orly", FRA: "Frankfurt", MUC: "München", BER: "Berlijn", HAM: "Hamburg",
+  DUS: "Düsseldorf", STR: "Stuttgart", ZRH: "Zürich", GVA: "Genève", BSL: "Bazel", VIE: "Wenen",
+  BCN: "Barcelona", MAD: "Madrid", AGP: "Málaga", ALC: "Alicante", VLC: "Valencia", PMI: "Palma de Mallorca", IBZ: "Ibiza",
+  LIS: "Lissabon", OPO: "Porto", FAO: "Faro", FCO: "Rome", MXP: "Milaan", LIN: "Milaan Linate", VCE: "Venetië", NAP: "Napels",
+  BLQ: "Bologna", FLR: "Florence", ATH: "Athene", HER: "Heraklion", RHO: "Rhodos", IST: "Istanbul", SAW: "Istanbul SAW",
+  AYT: "Antalya", DLM: "Dalaman", CPH: "Kopenhagen", BLL: "Billund", OSL: "Oslo", BGO: "Bergen", ARN: "Stockholm",
+  GOT: "Göteborg", HEL: "Helsinki", DUB: "Dublin", EDI: "Edinburgh", GLA: "Glasgow", MAN: "Manchester",
+  BHX: "Birmingham", NCL: "Newcastle", BRS: "Bristol", PRG: "Praag", WAW: "Warschau", KRK: "Krakau", BUD: "Boedapest",
+  OTP: "Boekarest", SOF: "Sofia", KEF: "Reykjavik", NCE: "Nice", LYS: "Lyon", MRS: "Marseille", TLS: "Toulouse",
+  TFS: "Tenerife", LPA: "Gran Canaria", ACE: "Lanzarote", FUE: "Fuerteventura", RAK: "Marrakesh", CMN: "Casablanca",
+  NDR: "Nador", TNG: "Tanger", HRG: "Hurghada", CAI: "Caïro", TLV: "Tel Aviv",
+  JFK: "New York JFK", EWR: "New York Newark", BOS: "Boston", IAD: "Washington", ATL: "Atlanta", ORD: "Chicago",
+  DTW: "Detroit", MSP: "Minneapolis", LAX: "Los Angeles", SFO: "San Francisco", SEA: "Seattle", IAH: "Houston",
+  MIA: "Miami", YYZ: "Toronto", YUL: "Montreal", YVR: "Vancouver", MEX: "Mexico-Stad", CUN: "Cancún",
+  CUR: "Curaçao", AUA: "Aruba", BON: "Bonaire", SXM: "Sint Maarten", PBM: "Paramaribo", GRU: "São Paulo",
+  EZE: "Buenos Aires", LIM: "Lima", BOG: "Bogotá", PTY: "Panama-Stad",
+  DXB: "Dubai", DOH: "Doha", AUH: "Abu Dhabi", NBO: "Nairobi", JNB: "Johannesburg", CPT: "Kaapstad", LOS: "Lagos",
+  ACC: "Accra", DEL: "Delhi", BOM: "Mumbai", BLR: "Bangalore", SIN: "Singapore", BKK: "Bangkok", KUL: "Kuala Lumpur",
+  CGK: "Jakarta", DPS: "Denpasar Bali", HKG: "Hongkong", PVG: "Shanghai", PEK: "Peking", ICN: "Seoul",
+  NRT: "Tokio Narita", HND: "Tokio Haneda", TPE: "Taipei", MNL: "Manilla"
+};
+const nameCache = JSON.parse(localStorage.getItem("spl-names") || "{}");
+const placeName = iata => AIRPORTS[iata] || nameCache[iata] || iata;
+
+// Zoektekst → luchthavencodes (bv. "londen" → LHR, LGW, LCY, STN, LTN)
+function routeCodes(q) {
+  const n = norm(q).trim();
+  if (!n) return [];
+  if (/^[A-Z]{3}$/.test(n) && (AIRPORTS[n] || nameCache[n])) return [n];
+  const all = { ...nameCache, ...AIRPORTS };
+  return Object.keys(all).filter(k => norm(all[k]).split(/[ \-]/).some(w => w.startsWith(n)) || norm(all[k]).startsWith(n));
+}
+
+// ================= Gegevens: demo =================
+// Deterministische "dag" met vluchten; de status volgt de echte klok, zodat het bord leeft.
+function rng(seed) { return () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296; }
+const AIRLINES = ["KL", "KL", "KL", "KL", "HV", "HV", "U2", "BA", "LH", "AF", "DL", "TK", "EK", "QR", "SK", "IB", "AZ", "VY", "LX", "OS"];
+const DEMO_DEST = Object.keys(AIRPORTS);
+
+function demoFlights(dir) {
+  const day = new Date(); day.setHours(0, 0, 0, 0);
+  const r = rng(day.getDate() * 31 + day.getMonth() * 7 + (dir === "D" ? 1 : 2));
+  const out = [];
+  for (let m = 6 * 60; m < 24 * 60; m += 2 + Math.floor(r() * 5)) {
+    const t = new Date(day.getTime() + m * 60000);
+    const dest = DEMO_DEST[Math.floor(r() * DEMO_DEST.length)];
+    const al = AIRLINES[Math.floor(r() * AIRLINES.length)];
+    const nr = al + (al === "KL" ? 1000 + Math.floor(r() * 900) : 100 + Math.floor(r() * 8800));
+    const pier = "BCDEFGHM"[Math.floor(r() * 8)];
+    const roll = r();
+    const delay = roll < 0.12 ? 10 + Math.floor(r() * 50) : 0;
+    const cancelled = roll > 0.985;
+    out.push({ time: t, iata: dest, flight: nr, gate: pier + (1 + Math.floor(r() * 30)),
+      belt: String(11 + Math.floor(r() * 16)), delay, cancelled });
+  }
+  const now = Date.now();
+  return out.map(f => {
+    const real = f.time.getTime() + f.delay * 60000;
+    const mins = (real - now) / 60000;
+    let status = "", tone = "";
+    if (f.cancelled) { status = "GEANNULEERD"; tone = "red"; }
+    else if (dir === "D") {
+      if (mins < -10) status = "VERTROKKEN", tone = "dim";
+      else if (mins < 0) status = "GATE DICHT", tone = "dim";
+      else if (mins < 15) status = "GATE SLUIT", tone = "yellow";
+      else if (mins < 35) status = "BOARDING", tone = "yellow";
+      else if (mins < 55) status = "GATE OPEN", tone = "yellow";
+      else if (f.delay) status = "VERTR " + hhmm(new Date(real)), tone = "red";
+    } else {
+      if (mins < -25) status = "BAGAGE BAND", tone = "dim";
+      else if (mins < 0) status = "GELAND " + hhmm(new Date(real)), tone = "yellow";
+      else if (mins < 45 || f.delay) status = "VERWACHT " + hhmm(new Date(real)), tone = f.delay ? "red" : "";
+    }
+    return { time: f.time, place: placeName(f.iata), iata: f.iata, flight: f.flight,
+      gate: dir === "D" ? f.gate : (mins < 0 && !f.cancelled ? f.belt : ""), status, tone,
+      sortT: f.time.getTime(), done: dir === "D" ? mins < -10 : mins < -40 };
+  });
+}
+
+// ================= Gegevens: Schiphol Public Flight API =================
+const keys = () => ({ id: localStorage.getItem("spl-id") || "", key: localStorage.getItem("spl-key") || "" });
+const hhmm = d => d.toTimeString().slice(0, 5);
+const localIso = d => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 19);
+
+async function api(path, params) {
+  const { id, key } = keys();
+  const url = "https://api.schiphol.nl/public-flights/" + path + (params ? "?" + new URLSearchParams(params) : "");
+  const res = await fetch(url, { headers: { Accept: "application/json", ResourceVersion: "v4", app_id: id, app_key: key } });
+  if (res.status === 204) return {};
+  if (!res.ok) throw new Error(res.status === 403 || res.status === 401 ? "Sleutel ongeldig" : "HTTP " + res.status);
+  return res.json();
+}
+
+async function lookupNames(codes) {
+  const missing = [...new Set(codes)].filter(c => !AIRPORTS[c] && !nameCache[c]);
+  await Promise.all(missing.slice(0, 15).map(async c => {
+    try {
+      const d = await api("destinations/" + c);
+      nameCache[c] = (d.publicName && (d.publicName.dutch || d.publicName.english)) || d.city || c;
+    } catch (e) { /* laat de code staan */ }
+  }));
+  localStorage.setItem("spl-names", JSON.stringify(nameCache));
+}
+
+const STATE_D = { SCH: "", DEL: "VERTRAAGD", WIL: "WACHT", GTO: "GATE OPEN", BRD: "BOARDING", GCL: "GATE SLUIT",
+  GTD: "GATE DICHT", DEP: "VERTROKKEN", CNX: "GEANNULEERD", GCH: "GATEWIJZIGING", TOM: "MORGEN" };
+const STATE_A = { SCH: "", AIR: "ONDERWEG", EXP: "VERWACHT", FIR: "BOVEN NL", LND: "GELAND", FIB: "BAGAGE",
+  ARR: "BAGAGE BAND", DIV: "UITGEWEKEN", CNX: "GEANNULEERD", TOM: "MORGEN" };
+
+async function apiFlights(dir, codes) {
+  const now = new Date();
+  const base = { flightDirection: dir, includedelays: "false", searchDateTimeField: "scheduleDateTime",
+    fromDateTime: localIso(new Date(now - (dir === "D" ? 30 : 60) * 60000)),
+    toDateTime: localIso(new Date(+now + 20 * 3600000)), sort: "+scheduleDateTime" };
+  const routes = codes.length ? codes.slice(0, 6) : [null];
+  let flights = [];
+  for (const route of routes) {
+    for (let page = 0; page < (route ? 3 : 6); page++) {
+      const j = await api("flights", { ...base, page, ...(route ? { route } : {}) });
+      if (!j.flights || !j.flights.length) break;
+      flights.push(...j.flights);
+      if (j.flights.length < 20) break;
+    }
+  }
+  // Codeshares weglaten: alleen de hoofdvlucht tonen
+  flights = flights.filter(f => !f.mainFlight || f.mainFlight === f.flightName);
+  await lookupNames(flights.map(f => (f.route.destinations || [])[0]).filter(Boolean));
+  const seen = new Set();
+  return flights.filter(f => !seen.has(f.id) && seen.add(f.id)).map(f => {
+    const iata = (f.route.destinations || [])[0] || "";
+    const sched = new Date(f.scheduleDateTime);
+    const states = (f.publicFlightState && f.publicFlightState.flightStates) || [];
+    const st = states[states.length - 1] || "SCH";
+    let status = (dir === "D" ? STATE_D : STATE_A)[st] ?? st, tone = "";
+    const est = dir === "D" ? (f.actualOffBlockTime || f.publicEstimatedOffBlockTime) : (f.actualLandingTime || f.estimatedLandingTime);
+    if (est && (dir === "A" || st === "DEL" || st === "SCH")) {
+      const e = new Date(est);
+      if (Math.abs(e - sched) >= 5 * 60000 || dir === "A") {
+        if (dir === "D" && e - sched >= 5 * 60000) { status = "VERTR " + hhmm(e); tone = "red"; }
+        if (dir === "A" && (st === "EXP" || st === "AIR" || st === "FIR" || st === "SCH")) status = "VERWACHT " + hhmm(e);
+        if (dir === "A" && (st === "LND")) status = "GELAND " + hhmm(e);
+      }
+    }
+    if (["BRD", "GCL", "GTO", "GCH", "LND", "FIB"].includes(st)) tone = "yellow";
+    if (["CNX", "DIV"].includes(st)) tone = "red";
+    if (["DEP", "GTD", "ARR"].includes(st)) tone = "dim";
+    return { time: sched, place: placeName(iata), iata, flight: f.flightName,
+      gate: dir === "D" ? (f.gate || "") : ((f.baggageClaim && f.baggageClaim.belts || [])[0] || ""),
+      status, tone, sortT: sched.getTime(), done: false };
+  }).sort((a, b) => a.sortT - b.sortT);
+}
+
+// ================= Bord opbouwen =================
+let dir = "D", flights = [], page = 0, rowsPerPage = 10, layout = null, rows = [], clockField = null;
+let usingApi = false;
+
+function computeLayout() {
+  const W = document.body.clientWidth - 20;
+  const narrow = W < 640;
+  // Kolommen in aantal klepjes
+  const cols = narrow
+    ? [["time", "TIJD", 5], ["pl", dir === "D" ? "NAAR" : "VAN", 11], ["gate", dir === "D" ? "GATE" : "BAND", 3], ["st", "STATUS", 11]]
+    : [["time", "TIJD", 5], ["pl", dir === "D" ? "BESTEMMING · DESTINATION" : "HERKOMST · ORIGIN", 17],
+       ["fl", "VLUCHT", 7], ["gate", dir === "D" ? "GATE" : "BAND", 4], ["st", "STATUS", 15]];
+  const cells = cols.reduce((s, c) => s + c[2], 0);
+  const groups = cols.length - 1;
+  // breedte = cellen*w + (cellen-velden)*gap + groepen*0.6w
+  const gap = 2;
+  let w = (W - (cells - cols.length) * gap - 4) / (cells + groups * 0.6);
+  w = Math.max(9, Math.min(30, Math.floor(w)));
+  const h = Math.round(w * (narrow ? 1.75 : 1.5));
+  const avail = window.innerHeight - $("rows").getBoundingClientRect().top - 54;
+  return { cols, w, h, narrow, rows: Math.max(5, Math.min(26, Math.floor(avail / (h + 7)))) };
+}
+
+function buildBoard() {
+  layout = computeLayout();
+  document.documentElement.style.setProperty("--w", layout.w + "px");
+  document.documentElement.style.setProperty("--h", layout.h + "px");
+  rowsPerPage = layout.rows;
+  const heads = $("heads"); heads.innerHTML = "";
+  layout.cols.forEach(([k, label, n]) => {
+    const s = document.createElement("span");
+    s.textContent = label; s.style.width = `calc(${n} * var(--w) + ${n - 1} * var(--gap))`;
+    s.style.overflow = "hidden"; s.style.whiteSpace = "nowrap";
+    heads.appendChild(s);
+  });
+  const box = $("rows"); box.innerHTML = ""; rows = [];
+  for (let i = 0; i < rowsPerPage; i++) {
+    const r = document.createElement("div"); r.className = "row";
+    const fields = {};
+    layout.cols.forEach(([k, , n]) => fields[k] = new Field(r, n, k));
+    box.appendChild(r); rows.push({ el: r, fields });
+  }
+  // Klok in klepjes
+  const ck = $("clock"); ck.innerHTML = "";
+  ck.style.setProperty("--cw", Math.round(layout.w * 1.15) + "px");
+  ck.style.setProperty("--ch", Math.round(layout.h * 1.15) + "px");
+  clockField = new Field(ck, 5);
+  tickClock(true);
+  render();
+}
+
+function visibleFlights() {
+  const q = norm($("q").value).trim();
+  // Vertrokken/afgehandelde vluchten weglaten, behalve bij zoeken
+  let list = q ? flights : flights.filter(f => !f.done);
+  if (q) {
+    const codes = routeCodes($("q").value);
+    list = list.filter(f => codes.includes(f.iata) || norm(f.place).includes(q) || norm(f.flight).replace(/ /g, "").includes(q.replace(/ /g, "")) || f.iata === q);
+  }
+  return list;
+}
+
+function render() {
+  const list = visibleFlights();
+  const pages = Math.max(1, Math.ceil(list.length / rowsPerPage));
+  page = Math.min(page, pages - 1);
+  $("page").textContent = `${page + 1}/${pages}`;
+  $("prev").disabled = page === 0; $("next").disabled = page >= pages - 1;
+  const slice = list.slice(page * rowsPerPage, (page + 1) * rowsPerPage);
+  const q = $("q").value.trim();
+  $("msg").hidden = !!slice.length;
+  if (!slice.length) $("msg").textContent = q ? `Geen ${dir === "D" ? "vertrekkende" : "aankomende"} vluchten gevonden voor "${q}".` : "Geen vluchten.";
+  rows.forEach((r, i) => {
+    const f = slice[i];
+    r.el.className = "row" + (f && f.tone ? " " + f.tone : "") + (f && q ? " hit" : "");
+    const F = r.fields;
+    F.time.set(f ? hhmm(f.time) : "");
+    F.pl.set(f ? f.place : "");
+    if (F.fl) F.fl.set(f ? f.flight : "");
+    F.gate.set(f ? f.gate : "", "left");
+    F.st.set(f ? (layout.narrow ? shortStatus(f.status) : f.status) : "");
+  });
+}
+
+// Kortere statusteksten voor smalle schermen (11 klepjes)
+function shortStatus(st) {
+  return st.replace(/^VERWACHT /, "VERW ").replace(/^GELAND \d\d:\d\d$/, "GELAND").replace("GATEWIJZIGING", "GATE WIJZ");
+}
+
+function tickClock(force) {
+  if (clockField) clockField.set(hhmm(new Date()));
+}
+
+// ================= Laden =================
+let loadId = 0;
+async function load() {
+  const id = ++loadId;
+  const { id: appId, key } = keys();
+  const codes = routeCodes($("q").value);
+  if (appId && key) {
+    try {
+      const list = await apiFlights(dir, codes);
+      if (id !== loadId) return;
+      flights = list; usingApi = true;
+      $("badge").textContent = "LIVE"; $("badge").className = "badge live";
+      $("source").textContent = "Bron: Schiphol Public Flight API · " + hhmm(new Date());
+      render(); return;
+    } catch (e) {
+      if (id !== loadId) return;
+      $("source").textContent = `Live gegevens lukten niet (${e.message}); demo-gegevens getoond.`;
+    }
+  } else {
+    $("source").textContent = "Demo-gegevens · vul je Schiphol-sleutel in via ⚙️ voor echte vluchten";
+  }
+  usingApi = false;
+  $("badge").textContent = "DEMO"; $("badge").className = "badge";
+  flights = demoFlights(dir);
+  render();
+}
+
+function setDir(d) {
+  dir = d; page = 0;
+  $("modeD").classList.toggle("on", d === "D");
+  $("modeA").classList.toggle("on", d === "A");
+  $("title").innerHTML = d === "D" ? "VERTREK<small>DEPARTURES · SCHIPHOL</small>" : "AANKOMST<small>ARRIVALS · SCHIPHOL</small>";
+  flights = [];
+  buildBoard();
+  load();
+}
+
+// ================= Bediening =================
+$("modeD").onclick = () => setDir("D");
+$("modeA").onclick = () => setDir("A");
+$("prev").onclick = () => { page--; render(); };
+$("next").onclick = () => { page++; render(); };
+
+let searchTimer = null;
+$("q").addEventListener("input", () => {
+  $("clear").hidden = !$("q").value;
+  page = 0; render();
+  // Bij echte gegevens: na even wachten de hele dag voor deze route ophalen
+  clearTimeout(searchTimer);
+  if (usingApi) searchTimer = setTimeout(load, 700);
+});
+$("clear").onclick = () => { $("q").value = ""; $("clear").hidden = true; page = 0; render(); if (usingApi) load(); $("q").focus(); };
+
+$("settingsBtn").onclick = () => {
+  const k = keys(); $("appId").value = k.id; $("appKey").value = k.key;
+  $("settings").showModal();
+};
+$("settings").addEventListener("close", () => {
+  const v = $("settings").returnValue;
+  if (v === "save") {
+    localStorage.setItem("spl-id", $("appId").value.trim());
+    localStorage.setItem("spl-key", $("appKey").value.trim());
+  } else if (v === "demo") {
+    localStorage.removeItem("spl-id"); localStorage.removeItem("spl-key");
+  } else return;
+  load();
+});
+
+let resizeTimer = null;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { const old = layout; const n = computeLayout();
+    if (!old || n.w !== old.w || n.rows !== old.rows || n.cols.length !== old.cols.length) buildBoard(); }, 200);
+});
+
+setInterval(tickClock, 1000);
+setInterval(load, 60 * 1000);          // elke minuut verversen
+// Bij veel vluchten: automatisch door de pagina's, zoals op het echte bord
+setInterval(() => {
+  if (document.activeElement === $("q")) return;
+  const pages = Math.ceil(visibleFlights().length / rowsPerPage);
+  if (pages > 1) { page = (page + 1) % Math.min(pages, 4); render(); }
+}, 20 * 1000);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") load(); });
+
+setDir("D");
+</script>
+</body>
+</html>
