@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Een klepje van een klapbord met een geel vliegtuig -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#26262A" android:pathData="M36,30 h36 a4,4 0 0 1 4,4 v19.5 h-44 v-19.5 a4,4 0 0 1 4,-4 z" />
+    <path android:fillColor="#1C1C1E" android:pathData="M32,54.5 h44 v19.5 a4,4 0 0 1 -4,4 h-36 a4,4 0 0 1 -4,-4 z" />
+    <group android:translateX="38" android:translateY="38" android:scaleX="1.35" android:scaleY="1.35">
+        <path android:fillColor="#FFD200"
+            android:pathData="M21,16v-2l-8,-5V3.5C13,2.67 12.33,2 11.5,2S10,2.67 10,3.5V9l-8,5v2l8,-2.5V19l-2,1.5V22l3.5,-1 3.5,1v-1.5L13,19v-5.5L21,16z" />
+    </group>
+    <path android:fillColor="#000000" android:pathData="M32,53.5 h44 v1.2 h-44 z" />
+</vector>

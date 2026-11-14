@@ -10,3 +10,12 @@ Vertrek- en aankomstbord van Schiphol in de stijl van de oude klapborden (split-
 Online: https://hvdwinden.github.io/schipholbord/
 
 Niet verbonden aan Royal Schiphol Group.
+
+## Android-app
+
+`android/` bevat een kleine app die het bord in een WebView toont. Aanvragen naar de Schiphol-API
+gaan via de app zelf, zodat browserbeveiliging (CORS) ze niet tegenhoudt.
+
+```bash
+cd android && ./gradlew assembleDebug
+```

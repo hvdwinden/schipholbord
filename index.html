@@ -297,13 +297,28 @@ const keys = () => ({ id: localStorage.getItem("spl-id") || "", key: localStorag
 const hhmm = d => d.toTimeString().slice(0, 5);
 const localIso = d => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 19);
 
+// In de Android-app gaan aanvragen via de app zelf (geen last van browserbeveiliging/CORS)
+const bridge = window.SchipholBridge || null;
+const pending = {};
+let reqSeq = 0;
+window.onBridgeResult = (id, status, body) => { const p = pending[id]; delete pending[id]; if (p) p({ status, body }); };
+
 async function api(path, params) {
   const { id, key } = keys();
-  const url = "https://api.schiphol.nl/public-flights/" + path + (params ? "?" + new URLSearchParams(params) : "");
-  const res = await fetch(url, { headers: { Accept: "application/json", ResourceVersion: "v4", app_id: id, app_key: key } });
-  if (res.status === 204) return {};
-  if (!res.ok) throw new Error(res.status === 403 || res.status === 401 ? "Sleutel ongeldig" : "HTTP " + res.status);
-  return res.json();
+  const rel = path + (params ? "?" + new URLSearchParams(params) : "");
+  let status, body;
+  if (bridge) {
+    const rid = "r" + (++reqSeq);
+    ({ status, body } = await new Promise(res => { pending[rid] = res; bridge.get(rid, rel, id, key); }));
+    if (status === 0) throw new Error("geen verbinding");
+  } else {
+    const res = await fetch("https://api.schiphol.nl/public-flights/" + rel,
+      { headers: { Accept: "application/json", ResourceVersion: "v4", app_id: id, app_key: key } });
+    status = res.status; body = await res.text();
+  }
+  if (status === 204 || !body.trim()) return {};
+  if (status >= 400) throw new Error(status === 403 || status === 401 ? "sleutel ongeldig" : "HTTP " + status);
+  return JSON.parse(body);
 }
 
 async function lookupNames(codes) {
@@ -525,6 +540,9 @@ $("settings").addEventListener("close", () => {
   } else return;
   load();
 });
+
+// Android-terugknop: eerst het instellingenvenster sluiten
+window.handleBack = () => { if ($("settings").open) { $("settings").close(); return true; } return false; };
 
 let resizeTimer = null;
 window.addEventListener("resize", () => {
